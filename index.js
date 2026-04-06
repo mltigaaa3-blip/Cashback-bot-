@@ -1,32 +1,28 @@
 const {
   Client,
-  GatewayIntentBits,
   REST,
   Routes,
   SlashCommandBuilder,
-  EmbedBuilder
-} = require("discord.js");
-const fs = require("fs");
+  EmbedBuilder,
+  GatewayIntentBits
+} = require('discord.js');
+
+const fs = require('fs');
 
 /* ================= CONFIG ================= */
-
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
-
-/* ================= CLIENT ================= */
+/* ========================================= */
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-/* ================= DATABASE (VOLUME SAFE) ================= */
-
-const FILE = "/data/data.json";
-
-if (!fs.existsSync("/data")) fs.mkdirSync("/data");
+/* ================= DATABASE ================= */
+const FILE = './data.json';
 
 if (!fs.existsSync(FILE)) {
   fs.writeFileSync(FILE, JSON.stringify({ pending: {}, cashback: {} }));
@@ -34,201 +30,177 @@ if (!fs.existsSync(FILE)) {
 
 let data = JSON.parse(fs.readFileSync(FILE));
 
-if (!data.pending) data.pending = {};
-if (!data.cashback) data.cashback = {};
-
 function save() {
   fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
-/* ================= UTILS ================= */
+/* ================= FORMAT ================= */
 
-function formatNumber(num) {
-  return new Intl.NumberFormat("id-ID").format(num);
-}
-
-function getTier(amount) {
-  if (amount >= 2000) return "🔥 Overlord";
-  if (amount >= 1200) return "👑 Sultan";
-  if (amount >= 750) return "💎 Elite";
-  if (amount >= 400) return "🏛️ Investor";
-  if (amount >= 200) return "💰 Grinder";
-  if (amount >= 75) return "🪙 Hunter";
-  if (amount >= 25) return "💵 Rookie";
-  return "▫️ -";
+function format(num) {
+  return new Intl.NumberFormat('id-ID').format(num);
 }
 
 /* ================= EMBED ================= */
 
 function buildEmbed() {
+  let pending = '';
+  let cashback = '';
+
   let totalPending = 0;
-  let totalCashback = 0;
+  let totalCash = 0;
 
-  const pending = Object.entries(data.pending).sort((a, b) => b[1] - a[1]);
-  const cashback = Object.entries(data.cashback).sort((a, b) => b[1] - a[1]);
-
-  const pendingList = pending.map(([n, a], i) => {
+  for (const [n, a] of Object.entries(data.pending)) {
+    pending += `• ${n} — ${format(a)} ⏣\n`;
     totalPending += a;
-    return `**${i + 1}.** ${n} — ${formatNumber(a)} ⏣`;
-  }).join("\n") || "_Kosong_";
+  }
 
-  const MAX = 15;
-  const cashbackList = cashback.slice(0, MAX).map(([n, a], i) => {
-    totalCashback += a;
-    return `**${i + 1}.** ${n} — ${formatNumber(a)} ⏣ (${getTier(a)})`;
-  }).join("\n") || "_Kosong_";
+  if (!pending) pending = '_Kosong_';
+
+  for (const [n, a] of Object.entries(data.cashback)) {
+    cashback += `• ${n} — ${format(a)} ⏣\n`;
+    totalCash += a;
+  }
+
+  if (!cashback) cashback = '_Kosong_';
 
   return new EmbedBuilder()
-    .setTitle("💰 CASHBACK SYSTEM CSBK")
-    .setColor("Gold")
-    .setDescription(`
-📊 **Dashboard Member**
-
-━━━━━━━━━━━━━━━━━━
-
-⏳ **PENDING**
-${pendingList}
-
-💵 Total Pending: **${formatNumber(totalPending)} ⏣**
-
-━━━━━━━━━━━━━━━━━━
-
-🏆 **CASHBACK**
-${cashbackList}
-
-🏦 Total Cashback: **${formatNumber(totalCashback)} ⏣**
-
-━━━━━━━━━━━━━━━━━━
-
-🔥 Semakin besar total → semakin tinggi tier!
-`)
-    .setTimestamp();
+    .setTitle('📊 CASHBACK PANEL')
+    .setColor(0x2f3136)
+    .addFields(
+      { name: '⏳ Pending', value: pending },
+      { name: 'Total Pending', value: `${format(totalPending)} ⏣` },
+      { name: '🎁 Cashback', value: cashback },
+      { name: 'Total Cashback', value: `${format(totalCash)} ⏣` }
+    );
 }
 
 /* ================= COMMAND ================= */
 
 const commands = [
   new SlashCommandBuilder()
-    .setName("pending")
-    .setDescription("Tambah pending")
-    .addStringOption(o => o.setName("nama").setRequired(true))
-    .addIntegerOption(o => o.setName("jumlah").setRequired(true)),
+    .setName('pending')
+    .setDescription('Tambah pending')
+    .addStringOption(o =>
+      o.setName('nama')
+        .setDescription('Nama user')
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName('jumlah')
+        .setDescription('Jumlah')
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
-    .setName("cair")
-    .setDescription("Cairkan cashback")
-    .addStringOption(o => o.setName("nama").setRequired(true))
-    .addIntegerOption(o => o.setName("jumlah").setRequired(true)),
+    .setName('cair')
+    .setDescription('Cairkan pending')
+    .addStringOption(o =>
+      o.setName('nama')
+        .setDescription('Nama user')
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName('jumlah')
+        .setDescription('Jumlah')
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
-    .setName("hapus")
-    .setDescription("Hapus user")
-    .addStringOption(o => o.setName("nama").setRequired(true))
+    .setName('hapus')
+    .setDescription('Hapus user')
+    .addStringOption(o =>
+      o.setName('nama')
+        .setDescription('Nama user')
+        .setRequired(true)
+    )
+
 ].map(c => c.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(TOKEN);
+/* ================= REGISTER ================= */
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-  console.log("Slash command ready");
+  console.log('✅ Command ready');
 })();
 
 /* ================= READY ================= */
 
-client.once("ready", async () => {
-  console.log("BOT ONLINE 🔥");
+client.once('ready', async () => {
+  console.log('🔥 BOT ONLINE');
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
-  try {
-    if (!data.messageId) throw "no msg";
-
-    await channel.messages.fetch(data.messageId);
-  } catch {
+  if (!data.messageId) {
     const msg = await channel.send({ embeds: [buildEmbed()] });
     data.messageId = msg.id;
     save();
   }
 });
 
-/* ================= HANDLE ================= */
+/* ================= INTERACTION ================= */
 
-client.on("interactionCreate", async interaction => {
+client.on('interactionCreate', async i => {
+  if (!i.isChatInputCommand()) return;
 
-  if (!interaction.isChatInputCommand()) return;
+  if (i.user.id !== ADMIN_ID) {
+    return i.reply({ content: '❌ No access', ephemeral: true });
+  }
 
-  await interaction.deferReply({ ephemeral: true });
+  let msg;
 
   try {
+    msg = await i.channel.messages.fetch(data.messageId);
+  } catch {
+    msg = await i.channel.send({ embeds: [buildEmbed()] });
+    data.messageId = msg.id;
+    save();
+  }
 
-    if (interaction.user.id !== ADMIN_ID) {
-      return interaction.editReply("❌ Tidak ada izin");
-    }
+  if (i.commandName === 'pending') {
+    const n = i.options.getString('nama');
+    const j = i.options.getInteger('jumlah');
 
-    const channel = await client.channels.fetch(CHANNEL_ID);
+    data.pending[n] = (data.pending[n] || 0) + j;
+    save();
 
-    let msg;
+    await msg.edit({ embeds: [buildEmbed()] });
 
-    try {
-      msg = await channel.messages.fetch(data.messageId);
-    } catch {
-      msg = await channel.send({ embeds: [buildEmbed()] });
-      data.messageId = msg.id;
-      save();
-    }
+    return i.reply({ content: '✅ Pending masuk', ephemeral: true });
+  }
 
-    // ===== PENDING =====
-    if (interaction.commandName === "pending") {
-      const n = interaction.options.getString("nama");
-      const j = interaction.options.getInteger("jumlah");
+  if (i.commandName === 'cair') {
+    const n = i.options.getString('nama');
+    const j = i.options.getInteger('jumlah');
 
-      data.pending[n] = (data.pending[n] || 0) + j;
-      save();
+    if (!data.pending[n] || data.pending[n] < j)
+      return i.reply({ content: '❌ Tidak cukup', ephemeral: true });
 
-      await msg.edit({ embeds: [buildEmbed()] });
+    data.pending[n] -= j;
+    if (data.pending[n] <= 0) delete data.pending[n];
 
-      return interaction.editReply("✅ Pending ditambah");
-    }
+    data.cashback[n] = (data.cashback[n] || 0) + j;
+    save();
 
-    // ===== CAIR =====
-    if (interaction.commandName === "cair") {
-      const n = interaction.options.getString("nama");
-      const j = interaction.options.getInteger("jumlah");
+    await msg.edit({ embeds: [buildEmbed()] });
 
-      if (!data.pending[n] || data.pending[n] < j) {
-        return interaction.editReply("❌ Pending tidak cukup");
-      }
+    return i.reply({ content: '💰 Berhasil cair', ephemeral: true });
+  }
 
-      data.pending[n] -= j;
-      if (data.pending[n] <= 0) delete data.pending[n];
+  if (i.commandName === 'hapus') {
+    const n = i.options.getString('nama');
 
-      data.cashback[n] = (data.cashback[n] || 0) + j;
-      save();
+    delete data.pending[n];
+    delete data.cashback[n];
+    save();
 
-      await msg.edit({ embeds: [buildEmbed()] });
+    await msg.edit({ embeds: [buildEmbed()] });
 
-      return interaction.editReply("💸 Berhasil dicairkan");
-    }
-
-    // ===== HAPUS =====
-    if (interaction.commandName === "hapus") {
-      const n = interaction.options.getString("nama");
-
-      delete data.pending[n];
-      delete data.cashback[n];
-      save();
-
-      await msg.edit({ embeds: [buildEmbed()] });
-
-      return interaction.editReply("🗑️ User dihapus");
-    }
-
-  } catch (err) {
-    console.error(err);
-    return interaction.editReply("❌ Error terjadi");
+    return i.reply({ content: '🗑️ Dihapus', ephemeral: true });
   }
 });
 
