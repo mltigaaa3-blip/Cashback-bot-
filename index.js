@@ -4,7 +4,10 @@ const {
   Routes,
   SlashCommandBuilder,
   EmbedBuilder,
-  GatewayIntentBits
+  GatewayIntentBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const fs = require("fs");
@@ -21,8 +24,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-/* ================= DATABASE (RAILWAY SAFE) ================= */
-
+/* ================= DATABASE ================= */
 const DIR = "/data";
 const FILE = "/data/data.json";
 
@@ -66,7 +68,6 @@ function buildEmbed() {
   let totalPending = 0;
   let totalCashback = 0;
 
-  /* PENDING */
   for (const [name, amount] of Object.entries(data.pending)) {
     pendingText += `• ${name} — ${format(amount)} ⏣\n`;
     totalPending += amount;
@@ -74,7 +75,6 @@ function buildEmbed() {
 
   if (!pendingText) pendingText = "_Kosong_";
 
-  /* CASHBACK SORT */
   const sorted = Object.entries(data.cashback)
     .sort((a, b) => b[1] - a[1]);
 
@@ -104,28 +104,24 @@ function buildEmbed() {
     .setTitle("📊 SALDO CASHBACK")
     .setColor(0x2f3136)
     .addFields(
-      {
-        name: "⏳ PENDING",
-        value: `────────────\n${pendingText}`
-      },
-      {
-        name: "💰 TOTAL PENDING",
-        value: `${format(totalPending)} ⏣`
-      },
-      {
-        name: "\u200B",
-        value: " "
-      },
-      {
-        name: "🎁 CASHBACK DIDAPAT",
-        value: `────────────\n\`\`\`\n${cashbackText}\`\`\``
-      },
-      {
-        name: "🏦 TOTAL CASHBACK",
-        value: `${format(totalCashback)} ⏣`
-      }
+      { name: "⏳ PENDING", value: `────────────\n${pendingText}` },
+      { name: "💰 TOTAL PENDING", value: `${format(totalPending)} ⏣` },
+      { name: "\u200B", value: " " },
+      { name: "🎁 CASHBACK DIDAPAT", value: `────────────\n\`\`\`\n${cashbackText}\`\`\`` },
+      { name: "🏦 TOTAL CASHBACK", value: `${format(totalCashback)} ⏣` }
     )
     .setTimestamp();
+}
+
+/* ================= BUTTON ================= */
+
+function buildButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("export")
+      .setLabel("📥 Export Data")
+      .setStyle(ButtonStyle.Secondary)
+  );
 }
 
 /* ================= COMMAND ================= */
@@ -180,7 +176,11 @@ client.once("ready", async () => {
   const channel = await client.channels.fetch(CHANNEL_ID);
 
   if (!data.messageId) {
-    const msg = await channel.send({ embeds: [buildEmbed()] });
+    const msg = await channel.send({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
+
     data.messageId = msg.id;
     save();
   }
@@ -189,20 +189,37 @@ client.once("ready", async () => {
 /* ================= INTERACTION ================= */
 
 client.on("interactionCreate", async i => {
+
+  /* BUTTON EXPORT */
+  if (i.isButton() && i.customId === "export") {
+
+    const filePath = "/data/export.json";
+    fs.writeFileSync(filePath, JSON.stringify(data.cashback, null, 2));
+
+    return i.reply({
+      content: "📥 Download data cashback:",
+      files: [filePath],
+      ephemeral: true
+    });
+  }
+
   if (!i.isChatInputCommand()) return;
 
   if (i.user.id !== ADMIN_ID) {
     return i.reply({ content: "❌ No access", ephemeral: true });
   }
 
-  await i.deferReply({ ephemeral: true }); // 🔥 FIX NOT RESPOND
+  await i.deferReply({ ephemeral: true });
 
   let msg;
 
   try {
     msg = await i.channel.messages.fetch(data.messageId);
   } catch {
-    msg = await i.channel.send({ embeds: [buildEmbed()] });
+    msg = await i.channel.send({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
     data.messageId = msg.id;
     save();
   }
@@ -214,7 +231,10 @@ client.on("interactionCreate", async i => {
     data.pending[n] = (data.pending[n] || 0) + j;
     save();
 
-    await msg.edit({ embeds: [buildEmbed()] });
+    await msg.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
 
     return i.editReply("✅ Pending ditambahkan");
   }
@@ -233,7 +253,10 @@ client.on("interactionCreate", async i => {
     data.cashback[n] = (data.cashback[n] || 0) + j;
     save();
 
-    await msg.edit({ embeds: [buildEmbed()] });
+    await msg.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
 
     return i.editReply("💰 Berhasil dicairkan");
   }
@@ -245,7 +268,10 @@ client.on("interactionCreate", async i => {
     delete data.cashback[n];
     save();
 
-    await msg.edit({ embeds: [buildEmbed()] });
+    await msg.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
 
     return i.editReply("🗑️ Data dihapus");
   }
