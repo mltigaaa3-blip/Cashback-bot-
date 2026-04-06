@@ -22,9 +22,11 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-/* ================= DATABASE ================= */
+/* ================= DATABASE (VOLUME SAFE) ================= */
 
-const FILE = "./data.json";
+const FILE = "/data/data.json";
+
+if (!fs.existsSync("/data")) fs.mkdirSync("/data");
 
 if (!fs.existsSync(FILE)) {
   fs.writeFileSync(FILE, JSON.stringify({ pending: {}, cashback: {} }));
@@ -65,20 +67,16 @@ function buildEmbed() {
   const pending = Object.entries(data.pending).sort((a, b) => b[1] - a[1]);
   const cashback = Object.entries(data.cashback).sort((a, b) => b[1] - a[1]);
 
-  let pendingList = pending.map(([name, amount], i) => {
-    totalPending += amount;
-    return `**${i + 1}.** ${name} — ${formatNumber(amount)} ⏣`;
+  const pendingList = pending.map(([n, a], i) => {
+    totalPending += a;
+    return `**${i + 1}.** ${n} — ${formatNumber(a)} ⏣`;
   }).join("\n") || "_Kosong_";
 
   const MAX = 15;
-  let cashbackList = cashback.slice(0, MAX).map(([name, amount], i) => {
-    totalCashback += amount;
-    return `**${i + 1}.** ${name} — ${formatNumber(amount)} ⏣ (${getTier(amount)})`;
+  const cashbackList = cashback.slice(0, MAX).map(([n, a], i) => {
+    totalCashback += a;
+    return `**${i + 1}.** ${n} — ${formatNumber(a)} ⏣ (${getTier(a)})`;
   }).join("\n") || "_Kosong_";
-
-  if (cashback.length > MAX) {
-    cashbackList += `\n\n... +${cashback.length - MAX} lainnya`;
-  }
 
   return new EmbedBuilder()
     .setTitle("💰 CASHBACK SYSTEM CSBK")
@@ -118,7 +116,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("cair")
-    .setDescription("Cairkan ke cashback")
+    .setDescription("Cairkan cashback")
     .addStringOption(o => o.setName("nama").setRequired(true))
     .addIntegerOption(o => o.setName("jumlah").setRequired(true)),
 
@@ -145,7 +143,11 @@ client.once("ready", async () => {
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
-  if (!data.messageId) {
+  try {
+    if (!data.messageId) throw "no msg";
+
+    await channel.messages.fetch(data.messageId);
+  } catch {
     const msg = await channel.send({ embeds: [buildEmbed()] });
     data.messageId = msg.id;
     save();
@@ -158,34 +160,32 @@ client.on("interactionCreate", async interaction => {
 
   if (!interaction.isChatInputCommand()) return;
 
+  await interaction.deferReply({ ephemeral: true });
+
   try {
 
     if (interaction.user.id !== ADMIN_ID) {
-      return interaction.reply({
-        content: "❌ Tidak ada izin",
-        ephemeral: true
-      });
+      return interaction.editReply("❌ Tidak ada izin");
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    const channel = await client.channels.fetch(CHANNEL_ID);
 
     let msg;
 
     try {
-      msg = await interaction.channel.messages.fetch(data.messageId);
+      msg = await channel.messages.fetch(data.messageId);
     } catch {
-      msg = await interaction.channel.send({ embeds: [buildEmbed()] });
+      msg = await channel.send({ embeds: [buildEmbed()] });
       data.messageId = msg.id;
       save();
     }
 
     // ===== PENDING =====
     if (interaction.commandName === "pending") {
+      const n = interaction.options.getString("nama");
+      const j = interaction.options.getInteger("jumlah");
 
-      const nama = interaction.options.getString("nama");
-      const jumlah = interaction.options.getInteger("jumlah");
-
-      data.pending[nama] = (data.pending[nama] || 0) + jumlah;
+      data.pending[n] = (data.pending[n] || 0) + j;
       save();
 
       await msg.edit({ embeds: [buildEmbed()] });
@@ -195,18 +195,17 @@ client.on("interactionCreate", async interaction => {
 
     // ===== CAIR =====
     if (interaction.commandName === "cair") {
+      const n = interaction.options.getString("nama");
+      const j = interaction.options.getInteger("jumlah");
 
-      const nama = interaction.options.getString("nama");
-      const jumlah = interaction.options.getInteger("jumlah");
-
-      if (!data.pending[nama] || data.pending[nama] < jumlah) {
+      if (!data.pending[n] || data.pending[n] < j) {
         return interaction.editReply("❌ Pending tidak cukup");
       }
 
-      data.pending[nama] -= jumlah;
-      if (data.pending[nama] === 0) delete data.pending[nama];
+      data.pending[n] -= j;
+      if (data.pending[n] <= 0) delete data.pending[n];
 
-      data.cashback[nama] = (data.cashback[nama] || 0) + jumlah;
+      data.cashback[n] = (data.cashback[n] || 0) + j;
       save();
 
       await msg.edit({ embeds: [buildEmbed()] });
@@ -216,11 +215,10 @@ client.on("interactionCreate", async interaction => {
 
     // ===== HAPUS =====
     if (interaction.commandName === "hapus") {
+      const n = interaction.options.getString("nama");
 
-      const nama = interaction.options.getString("nama");
-
-      delete data.pending[nama];
-      delete data.cashback[nama];
+      delete data.pending[n];
+      delete data.cashback[n];
       save();
 
       await msg.edit({ embeds: [buildEmbed()] });
@@ -230,13 +228,7 @@ client.on("interactionCreate", async interaction => {
 
   } catch (err) {
     console.error(err);
-
-    if (!interaction.replied) {
-      interaction.reply({
-        content: "❌ Error terjadi",
-        ephemeral: true
-      });
-    }
+    return interaction.editReply("❌ Error terjadi");
   }
 });
 
