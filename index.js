@@ -1,177 +1,150 @@
 const {
   Client,
+  GatewayIntentBits,
   REST,
   Routes,
   SlashCommandBuilder,
   EmbedBuilder
-} = require('discord.js');
-const fs = require('fs');
+} = require("discord.js");
+const fs = require("fs");
 
-// ========= CONFIG =========
-const TOKEN = 'MTQ2NTY3NTc0OTk2ODE4MzM2OA.Ggj6z2.Iy7SpMzNVxmQfpNSmwBEdiOMbl12TpwTEbykjw';
-const CLIENT_ID = '1465675749968183368';
-const GUILD_ID = '1437072658675269644';
-const CHANNEL_ID = '1437688402467098634';
-const ADMIN_ID = '1004034354919506011';
-// ==========================
+/* ================= CONFIG ================= */
 
-const client = new Client({ intents: [] });
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+const CHANNEL_ID = process.env.CHANNEL_ID;
+const ADMIN_ID = process.env.ADMIN_ID;
 
-// ===== LOAD DATA =====
-let data = JSON.parse(fs.readFileSync('./data.json', 'utf8'));
-if (!data.pending) data.pending = {};
-if (!data.cashback) data.cashback = {};
+/* ================= CLIENT ================= */
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
+});
+
+/* ================= DATABASE ================= */
+
+const FILE = "./data.json";
+
+if (!fs.existsSync(FILE)) {
+  fs.writeFileSync(FILE, JSON.stringify({ pending: {}, cashback: {} }));
+}
+
+let data = JSON.parse(fs.readFileSync(FILE));
 
 function save() {
-  fs.writeFileSync('./data.json', JSON.stringify(data, null, 2));
+  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
-// ===== SORT =====
-function sortObject(obj) {
-  return Object.fromEntries(
-    Object.entries(obj).sort(([a], [b]) => a.localeCompare(b))
-  );
-}
+/* ================= UTILS ================= */
 
-// ===== FORMAT =====
 function formatNumber(num) {
-  return new Intl.NumberFormat('id-ID').format(num);
+  return new Intl.NumberFormat("id-ID").format(num);
 }
 
-// ===== TIER =====
 function getTier(amount) {
-  if (amount >= 2000) return '🔥 Overlord';
-  if (amount >= 1200) return '👑 Sultan';
-  if (amount >= 750) return '💎 Elite';
-  if (amount >= 400) return '🏛️ Investor';
-  if (amount >= 200) return '💰 Grinder';
-  if (amount >= 75) return '🪙 Hunter';
-  if (amount >= 25) return '💵 Rookie';
-  return '▫️ -';
+  if (amount >= 2000) return "🔥 Overlord";
+  if (amount >= 1200) return "👑 Sultan";
+  if (amount >= 750) return "💎 Elite";
+  if (amount >= 400) return "🏛️ Investor";
+  if (amount >= 200) return "💰 Grinder";
+  if (amount >= 75) return "🪙 Hunter";
+  if (amount >= 25) return "💵 Rookie";
+  return "▫️ -";
 }
 
-// ===== BUILD EMBED (SUPER RAPI MONOSPACE) =====
+/* ================= EMBED ================= */
+
 function buildEmbed() {
-  let pendingList = '';
-  let cashbackList = '';
   let totalPending = 0;
   let totalCashback = 0;
 
-  data.pending = sortObject(data.pending);
-  data.cashback = sortObject(data.cashback);
+  const pending = Object.entries(data.pending).sort((a, b) => b[1] - a[1]);
+  const cashback = Object.entries(data.cashback).sort((a, b) => b[1] - a[1]);
 
   // Pending
-  for (const [name, amount] of Object.entries(data.pending)) {
-    pendingList += `• ${name} — ${formatNumber(amount)} ⏣\n`;
+  let pendingList = pending.map(([name, amount], i) => {
     totalPending += amount;
+    return `**${i + 1}.** ${name} — ${formatNumber(amount)} ⏣`;
+  }).join("\n");
+
+  if (!pendingList) pendingList = "_Kosong_";
+
+  // Cashback
+  const MAX = 15;
+  let cashbackList = cashback.slice(0, MAX).map(([name, amount], i) => {
+    totalCashback += amount;
+    return `**${i + 1}.** ${name} — ${formatNumber(amount)} ⏣ (${getTier(amount)})`;
+  }).join("\n");
+
+  if (!cashbackList) cashbackList = "_Kosong_";
+
+  if (cashback.length > MAX) {
+    cashbackList += `\n\n... +${cashback.length - MAX} lainnya`;
   }
 
-  if (!pendingList) pendingList = '_Kosong_';
-
-  // Cashback (rapi)
-  const entries = Object.entries(data.cashback);
-
-// Urut terbesar dulu
-const sorted = entries.sort((a, b) => b[1] - a[1]);
-
-// Maksimal 20 baris biar tidak kena limit 1024 karakter
-const MAX_ROWS = 20;
-const limited = sorted.slice(0, MAX_ROWS);
-
-const names = limited.map(e => e[0]);
-const maxNameLength = Math.max(...names.map(n => n.length), 15);
-
-const formattedAmounts = limited.map(e => formatNumber(e[1]));
-const maxAmountLength = Math.max(...formattedAmounts.map(a => a.length), 4);
-
-for (const [name, amount] of limited) {
-  totalCashback += amount;
-
-  const nameCol = name.padEnd(maxNameLength, ' ');
-  const amountCol = formatNumber(amount).padStart(maxAmountLength, ' ');
-  const tier = getTier(amount);
-
-  cashbackList += `• ${nameCol}  ${amountCol} ⏣  │  ${tier}\n`;
-}
-
-if (entries.length > MAX_ROWS) {
-  cashbackList += `\n... dan ${entries.length - MAX_ROWS} lainnya`;
-}
-
-  if (!cashbackList) cashbackList = '_Kosong_';
-
   return new EmbedBuilder()
-    .setTitle('📊 SALDO CASHBACK')
-    .setColor(0x2f3136)
-    .addFields(
-      {
-        name: '⏳ **PENDING**',
-        value: `\n────────────\n${pendingList}`
-      },
-      {
-        name: '💰 **TOTAL PENDING**',
-        value: `${formatNumber(totalPending)} ⏣`
-      },
-      {
-        name: '\u200B',
-        value: '\n'
-      },
-      {
-        name: '🎁 **CASHBACK DIDAPAT**',
-        value: `\n────────────\n\`\`\`\n${cashbackList}\`\`\``
-      },
-      {
-        name: '🏦 **TOTAL CASHBACK DIDAPAT**',
-        value: `${formatNumber(totalCashback)} ⏣`
-      }
-    )
+    .setTitle("💰 CASHBACK SYSTEM CSBK")
+    .setColor("Gold")
+    .setDescription(`
+📊 **Dashboard Keuangan Member**
+
+━━━━━━━━━━━━━━━━━━
+
+⏳ **PENDING**
+${pendingList}
+
+💵 Total Pending: **${formatNumber(totalPending)} ⏣**
+
+━━━━━━━━━━━━━━━━━━
+
+🏆 **CASHBACK DIDAPAT**
+${cashbackList}
+
+🏦 Total Cashback: **${formatNumber(totalCashback)} ⏣**
+
+━━━━━━━━━━━━━━━━━━
+
+🔥 Semakin besar total → semakin tinggi tier!
+`)
     .setTimestamp();
 }
 
-// ===== COMMANDS =====
+/* ================= COMMAND ================= */
+
 const commands = [
   new SlashCommandBuilder()
-    .setName('pending')
-    .setDescription('Tambah / update pending')
-    .addStringOption(o =>
-      o.setName('nama').setDescription('Nama user').setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName('jumlah').setDescription('Jumlah').setRequired(true)
-    ),
+    .setName("pending")
+    .setDescription("Tambah pending")
+    .addStringOption(o => o.setName("nama").setRequired(true))
+    .addIntegerOption(o => o.setName("jumlah").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName('cair')
-    .setDescription('Pindahkan pending ke cashback didapat')
-    .addStringOption(o =>
-      o.setName('nama').setDescription('Nama user').setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName('jumlah').setDescription('Jumlah').setRequired(true)
-    ),
+    .setName("cair")
+    .setDescription("Cairkan ke cashback")
+    .addStringOption(o => o.setName("nama").setRequired(true))
+    .addIntegerOption(o => o.setName("jumlah").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName('hapus')
-    .setDescription('Hapus user dari semua data')
-    .addStringOption(o =>
-      o.setName('nama').setDescription('Nama user').setRequired(true)
-    )
+    .setName("hapus")
+    .setDescription("Hapus user")
+    .addStringOption(o => o.setName("nama").setRequired(true))
 ].map(c => c.toJSON());
 
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-// ===== REGISTER =====
 (async () => {
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-  console.log('Slash command siap');
+  console.log("Slash command ready");
 })();
 
-// ===== READY =====
-client.once('ready', async () => {
-  console.log('BOT SIAP');
+/* ================= READY ================= */
+
+client.once("ready", async () => {
+  console.log("BOT ONLINE 🔥");
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
@@ -182,51 +155,52 @@ client.once('ready', async () => {
   }
 });
 
-// ===== HANDLE =====
-client.on('interactionCreate', async interaction => {
+/* ================= HANDLE ================= */
+
+client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.user.id !== ADMIN_ID) {
     return interaction.reply({
-      content: '❌ Kamu tidak punya izin memakai command ini.',
+      content: "❌ Tidak ada izin",
       ephemeral: true
     });
   }
 
   let msg;
 
-try {
-  msg = await interaction.channel.messages.fetch(data.messageId);
-} catch (err) {
-  msg = await interaction.channel.send({ embeds: [buildEmbed()] });
-  data.messageId = msg.id;
-  save();
-}
+  try {
+    msg = await interaction.channel.messages.fetch(data.messageId);
+  } catch {
+    msg = await interaction.channel.send({ embeds: [buildEmbed()] });
+    data.messageId = msg.id;
+    save();
+  }
 
   // ===== PENDING =====
-  if (interaction.commandName === 'pending') {
+  if (interaction.commandName === "pending") {
     await interaction.deferReply({ ephemeral: true });
 
-    const nama = interaction.options.getString('nama');
-    const jumlah = interaction.options.getInteger('jumlah');
+    const nama = interaction.options.getString("nama");
+    const jumlah = interaction.options.getInteger("jumlah");
 
     data.pending[nama] = (data.pending[nama] || 0) + jumlah;
     save();
 
     await msg.edit({ embeds: [buildEmbed()] });
 
-    return interaction.editReply('✅ Pending diperbarui');
+    return interaction.editReply("✅ Pending ditambah");
   }
 
   // ===== CAIR =====
-  if (interaction.commandName === 'cair') {
+  if (interaction.commandName === "cair") {
     await interaction.deferReply({ ephemeral: true });
 
-    const nama = interaction.options.getString('nama');
-    const jumlah = interaction.options.getInteger('jumlah');
+    const nama = interaction.options.getString("nama");
+    const jumlah = interaction.options.getInteger("jumlah");
 
     if (!data.pending[nama] || data.pending[nama] < jumlah) {
-      return interaction.editReply('❌ Pending tidak cukup');
+      return interaction.editReply("❌ Pending tidak cukup");
     }
 
     data.pending[nama] -= jumlah;
@@ -237,14 +211,14 @@ try {
 
     await msg.edit({ embeds: [buildEmbed()] });
 
-    return interaction.editReply('💸 Cashback dicairkan');
+    return interaction.editReply("💸 Berhasil dicairkan");
   }
 
   // ===== HAPUS =====
-  if (interaction.commandName === 'hapus') {
+  if (interaction.commandName === "hapus") {
     await interaction.deferReply({ ephemeral: true });
 
-    const nama = interaction.options.getString('nama');
+    const nama = interaction.options.getString("nama");
 
     delete data.pending[nama];
     delete data.cashback[nama];
@@ -252,7 +226,7 @@ try {
 
     await msg.edit({ embeds: [buildEmbed()] });
 
-    return interaction.editReply('🗑️ User dihapus');
+    return interaction.editReply("🗑️ User dihapus");
   }
 });
 
