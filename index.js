@@ -32,6 +32,9 @@ if (!fs.existsSync(FILE)) {
 
 let data = JSON.parse(fs.readFileSync(FILE));
 
+if (!data.pending) data.pending = {};
+if (!data.cashback) data.cashback = {};
+
 function save() {
   fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
@@ -62,22 +65,16 @@ function buildEmbed() {
   const pending = Object.entries(data.pending).sort((a, b) => b[1] - a[1]);
   const cashback = Object.entries(data.cashback).sort((a, b) => b[1] - a[1]);
 
-  // Pending
   let pendingList = pending.map(([name, amount], i) => {
     totalPending += amount;
     return `**${i + 1}.** ${name} — ${formatNumber(amount)} ⏣`;
-  }).join("\n");
+  }).join("\n") || "_Kosong_";
 
-  if (!pendingList) pendingList = "_Kosong_";
-
-  // Cashback
   const MAX = 15;
   let cashbackList = cashback.slice(0, MAX).map(([name, amount], i) => {
     totalCashback += amount;
     return `**${i + 1}.** ${name} — ${formatNumber(amount)} ⏣ (${getTier(amount)})`;
-  }).join("\n");
-
-  if (!cashbackList) cashbackList = "_Kosong_";
+  }).join("\n") || "_Kosong_";
 
   if (cashback.length > MAX) {
     cashbackList += `\n\n... +${cashback.length - MAX} lainnya`;
@@ -87,7 +84,7 @@ function buildEmbed() {
     .setTitle("💰 CASHBACK SYSTEM CSBK")
     .setColor("Gold")
     .setDescription(`
-📊 **Dashboard Keuangan Member**
+📊 **Dashboard Member**
 
 ━━━━━━━━━━━━━━━━━━
 
@@ -98,7 +95,7 @@ ${pendingList}
 
 ━━━━━━━━━━━━━━━━━━
 
-🏆 **CASHBACK DIDAPAT**
+🏆 **CASHBACK**
 ${cashbackList}
 
 🏦 Total Cashback: **${formatNumber(totalCashback)} ⏣**
@@ -158,75 +155,88 @@ client.once("ready", async () => {
 /* ================= HANDLE ================= */
 
 client.on("interactionCreate", async interaction => {
+
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.user.id !== ADMIN_ID) {
-    return interaction.reply({
-      content: "❌ Tidak ada izin",
-      ephemeral: true
-    });
-  }
-
-  let msg;
-
   try {
-    msg = await interaction.channel.messages.fetch(data.messageId);
-  } catch {
-    msg = await interaction.channel.send({ embeds: [buildEmbed()] });
-    data.messageId = msg.id;
-    save();
-  }
 
-  // ===== PENDING =====
-  if (interaction.commandName === "pending") {
-    await interaction.deferReply({ ephemeral: true });
-
-    const nama = interaction.options.getString("nama");
-    const jumlah = interaction.options.getInteger("jumlah");
-
-    data.pending[nama] = (data.pending[nama] || 0) + jumlah;
-    save();
-
-    await msg.edit({ embeds: [buildEmbed()] });
-
-    return interaction.editReply("✅ Pending ditambah");
-  }
-
-  // ===== CAIR =====
-  if (interaction.commandName === "cair") {
-    await interaction.deferReply({ ephemeral: true });
-
-    const nama = interaction.options.getString("nama");
-    const jumlah = interaction.options.getInteger("jumlah");
-
-    if (!data.pending[nama] || data.pending[nama] < jumlah) {
-      return interaction.editReply("❌ Pending tidak cukup");
+    if (interaction.user.id !== ADMIN_ID) {
+      return interaction.reply({
+        content: "❌ Tidak ada izin",
+        ephemeral: true
+      });
     }
 
-    data.pending[nama] -= jumlah;
-    if (data.pending[nama] === 0) delete data.pending[nama];
-
-    data.cashback[nama] = (data.cashback[nama] || 0) + jumlah;
-    save();
-
-    await msg.edit({ embeds: [buildEmbed()] });
-
-    return interaction.editReply("💸 Berhasil dicairkan");
-  }
-
-  // ===== HAPUS =====
-  if (interaction.commandName === "hapus") {
     await interaction.deferReply({ ephemeral: true });
 
-    const nama = interaction.options.getString("nama");
+    let msg;
 
-    delete data.pending[nama];
-    delete data.cashback[nama];
-    save();
+    try {
+      msg = await interaction.channel.messages.fetch(data.messageId);
+    } catch {
+      msg = await interaction.channel.send({ embeds: [buildEmbed()] });
+      data.messageId = msg.id;
+      save();
+    }
 
-    await msg.edit({ embeds: [buildEmbed()] });
+    // ===== PENDING =====
+    if (interaction.commandName === "pending") {
 
-    return interaction.editReply("🗑️ User dihapus");
+      const nama = interaction.options.getString("nama");
+      const jumlah = interaction.options.getInteger("jumlah");
+
+      data.pending[nama] = (data.pending[nama] || 0) + jumlah;
+      save();
+
+      await msg.edit({ embeds: [buildEmbed()] });
+
+      return interaction.editReply("✅ Pending ditambah");
+    }
+
+    // ===== CAIR =====
+    if (interaction.commandName === "cair") {
+
+      const nama = interaction.options.getString("nama");
+      const jumlah = interaction.options.getInteger("jumlah");
+
+      if (!data.pending[nama] || data.pending[nama] < jumlah) {
+        return interaction.editReply("❌ Pending tidak cukup");
+      }
+
+      data.pending[nama] -= jumlah;
+      if (data.pending[nama] === 0) delete data.pending[nama];
+
+      data.cashback[nama] = (data.cashback[nama] || 0) + jumlah;
+      save();
+
+      await msg.edit({ embeds: [buildEmbed()] });
+
+      return interaction.editReply("💸 Berhasil dicairkan");
+    }
+
+    // ===== HAPUS =====
+    if (interaction.commandName === "hapus") {
+
+      const nama = interaction.options.getString("nama");
+
+      delete data.pending[nama];
+      delete data.cashback[nama];
+      save();
+
+      await msg.edit({ embeds: [buildEmbed()] });
+
+      return interaction.editReply("🗑️ User dihapus");
+    }
+
+  } catch (err) {
+    console.error(err);
+
+    if (!interaction.replied) {
+      interaction.reply({
+        content: "❌ Error terjadi",
+        ephemeral: true
+      });
+    }
   }
 });
 
